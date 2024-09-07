@@ -1,0 +1,114 @@
+import cv2
+import mediapipe as mp
+import math
+import random
+import pygame
+
+# Pygame penceresi oluştur
+pygame.init()
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Top Yakalama Oyunu")
+
+# Renkler
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+
+# Oyun içi değişkenler
+score = 0
+clock = pygame.time.Clock()
+font = pygame.font.SysFont(None, 36)
+
+# Topların sınıfı
+class Ball(pygame.sprite.Sprite):
+    def _init_(self):
+        super()._init_()
+        self.image = pygame.Surface((30, 30))
+        self.image.fill(RED)
+        self.rect = self.image.get_rect()
+        self.rect.x = random.randint(0, WIDTH - self.rect.width)
+        self.rect.y = 0
+        self.speed = random.randint(1, 5)
+
+    def update(self):
+        self.rect.y += self.speed
+        if self.rect.y > HEIGHT:
+            self.rect.x = random.randint(0, WIDTH - self.rect.width)
+            self.rect.y = 0
+            self.speed = random.randint(1, 5)
+
+# Topları oluştur
+all_sprites = pygame.sprite.Group()
+current_ball = Ball()
+all_sprites.add(current_ball)
+
+# Mediapipe modülünü yükle
+mp_drawing = mp.solutions.drawing_utils
+mp_pose = mp.solutions.pose
+
+# Kamera yakalama
+cap = cv2.VideoCapture(0)
+
+# Pose dedektörünü başlat
+with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+        # Görüntüyü al
+        ret, frame = cap.read()
+        
+        # Görüntüyü yeniden boyutlandır
+        frame = cv2.resize(frame, (WIDTH, HEIGHT))
+        
+        # Görüntüyü siyah-beyaz yap
+        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Pose dedektörünü işle
+        pose_results = pose.process(image)
+
+        # El landmarklarını çiz
+        if pose_results.pose_landmarks:
+            mp_drawing.draw_landmarks(image, pose_results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+
+            # Ellerin konumunu al
+            left_hand_x = int(pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_WRIST].x * WIDTH)
+            left_hand_y = int(pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_WRIST].y * HEIGHT)
+            right_hand_x = int(pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_WRIST].x * WIDTH)
+            right_hand_y = int(pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_WRIST].y * HEIGHT)
+
+            # Elleri farklı renkli kutularla temsil et (daha büyük boyut)
+            pygame.draw.rect(screen, GREEN, pygame.Rect(left_hand_x - 30, left_hand_y - 30, 60, 60))  
+            pygame.draw.rect(screen, GREEN, pygame.Rect(right_hand_x - 30, right_hand_y - 30, 60, 60))  
+
+            # Topu yakalama kontrolü (el kutusuyla tam örtüşme)
+            if current_ball.rect.colliderect(pygame.Rect(left_hand_x - 30, left_hand_y - 30, 60, 60)):
+                score += 1
+                current_ball.kill()
+                current_ball = Ball()
+                all_sprites.add(current_ball)
+            elif current_ball.rect.colliderect(pygame.Rect(right_hand_x - 30, right_hand_y - 30, 60, 60)):
+                score += 1
+                current_ball.kill()
+                current_ball = Ball()
+                all_sprites.add(current_ball)
+
+        # Görüntüyü ekrana yansıt
+        screen.blit(pygame.image.frombuffer(frame.tostring(), (WIDTH, HEIGHT), 'RGB'), (0, 0))
+
+        # Ekranı güncelle
+        all_sprites.update()
+        all_sprites.draw(screen)
+
+        # Skoru ekrana yaz
+        text = font.render(f"Score: {score}", True, (0, 0, 0))
+        screen.blit(text, (10, 10))
+
+        pygame.display.flip()
+        clock.tick(60)
+
+# Kapat
+pygame.quit()
